@@ -9,8 +9,15 @@ st.set_page_config(page_title="EVE Scoring Engine", layout="wide")
 st.title("Enterprise Value Engineering™ (EVE) — Scoring Engine")
 
 # --- Secrets / API Key ---
-# Use Streamlit secrets in Community Cloud: st.secrets["OPENAI_API_KEY"] :contentReference[oaicite:4]{index=4}
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", "")
+OPENAI_API_KEY = (st.secrets.get("OPENAI_API_KEY", "") or "").strip()
+OPENAI_MODEL = (st.secrets.get("OPENAI_MODEL", "gpt-4.1-mini") or "").strip()
+
+with st.sidebar:
+    st.markdown("### LLM Status")
+    st.write("API key loaded:", "✅" if len(OPENAI_API_KEY) > 20 else "❌")
+    st.write("Model:", OPENAI_MODEL)
+    if len(OPENAI_API_KEY) <= 20:
+        st.info("Set OPENAI_API_KEY in Streamlit Cloud → App → Manage app → Settings → Secrets.")
 
 tab1, tab2 = st.tabs(["LLM Intake (Chat → Score)", "JSON Scorer"])
 
