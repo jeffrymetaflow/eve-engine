@@ -1,3 +1,4 @@
 pydantic>=2.6
 streamlit>=1.32
+requests>=2.31
 openai>=1.40.0
