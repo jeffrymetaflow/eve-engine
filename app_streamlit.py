@@ -60,7 +60,7 @@ with tab1:
                 out = ask_intake_agent(
                     api_key=OPENAI_API_KEY,
                     messages=st.session_state.intake_messages,
-                    model=st.secrets.get("OPENAI_MODEL", "gpt-5"),
+                    model=OPENAI_MODEL,
                 )
 
             if out["type"] == "question":
