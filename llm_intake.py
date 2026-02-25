@@ -91,13 +91,15 @@ def ask_intake_agent(
         transcript_lines.append(f"{role}: {m['content']}")
     transcript = "\n".join(transcript_lines).strip()
 
-    resp = client.responses.create(
+    chat = client.chat.completions.create(
         model=model,
-        instructions=INTAKE_INSTRUCTIONS,
-        input=transcript,
+        messages=[
+            {"role": "system", "content": INTAKE_INSTRUCTIONS},
+            {"role": "user", "content": transcript}
+        ],
     )
 
-    text = (resp.output_text or "").strip()
+text = (chat.choices[0].message.content or "").strip()
 
     # If it looks like JSON, try validate as Deal
     maybe = _extract_json_from_text(text)
