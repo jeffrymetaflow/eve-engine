@@ -5,17 +5,57 @@ from eve_models import Deal
 from eve_scoring import compute_eve, EVEConfig
 from llm_intake import ask_intake_agent
 
+# --- Page Config ---
 st.set_page_config(page_title="EVE Scoring Engine", layout="wide")
-st.title("Enterprise Value Engineering™ (EVE) — Scoring Engine")
+
+# --- Initialize Session State ---
+if "weights" not in st.session_state:
+    st.session_state.weights = {"v1": 0.25, "v2": 0.20, "v3": 0.20, "v4": 0.20, "v5": 0.15}
+if "intake_messages" not in st.session_state:
+    st.session_state.intake_messages = []
+if "deal_json" not in st.session_state:
+    st.session_state.deal_json = None
+if "last_question" not in st.session_state:
+    st.session_state.last_question = "Let’s start. What’s the company’s industry, approximate annual revenue, and EBITDA margin (or ‘unknown’)?"
 
 # --- Secrets / API Key ---
+# Corrected model name to gpt-4o-mini
 OPENAI_API_KEY = (st.secrets.get("OPENAI_API_KEY", "") or "").strip()
-OPENAI_MODEL = (st.secrets.get("OPENAI_MODEL", "gpt-4.0-mini") or "").strip()
+OPENAI_MODEL = (st.secrets.get("OPENAI_MODEL", "gpt-4o-mini") or "").strip()
+
+# --- UI Header ---
+st.title("Enterprise Value Engineering™ (EVE) — Scoring Engine")
 
 with st.sidebar:
     st.markdown("### LLM Status")
     st.write("API key loaded:", "✅" if len(OPENAI_API_KEY) > 20 else "❌")
     st.write("Model:", OPENAI_MODEL)
+    
+    st.divider()
+    
+    st.markdown("### Global Scoring Weights")
+    st.caption("Adjust these to influence both the Chat and JSON modes.")
+    
+    # Weight Sliders with Session State sync
+    v1 = st.slider("V1 Capital Productivity", 0.0, 1.0, st.session_state.weights["v1"], 0.01)
+    v2 = st.slider("V2 Risk Compression", 0.0, 1.0, st.session_state.weights["v2"], 0.01)
+    v3 = st.slider("V3 Strategic Velocity", 0.0, 1.0, st.session_state.weights["v3"], 0.01)
+    v4 = st.slider("V4 Optionality", 0.0, 1.0, st.session_state.weights["v4"], 0.01)
+    v5 = st.slider("V5 Resilience", 0.0, 1.0, st.session_state.weights["v5"], 0.01)
+
+    # Normalize logic
+    current_weights = {"v1": v1, "v2": v2, "v3": v3, "v4": v4, "v5": v5}
+    total_w = sum(current_weights.values())
+    
+    if abs(total_w - 1.0) > 1e-6:
+        st.warning(f"Weights sum to {total_w:.2f}. Normalizing...")
+        if st.button("Fix Weights"):
+            st.session_state.weights = {k: v / total_w for k, v in current_weights.items()}
+            st.rerun()
+    else:
+        st.session_state.weights = current_weights
+        st.success("Weights balanced (1.0)")
+
     if len(OPENAI_API_KEY) <= 20:
         st.info("Set OPENAI_API_KEY in Streamlit Cloud → App → Manage app → Settings → Secrets.")
 
@@ -28,22 +68,14 @@ with tab1:
     st.subheader("LLM Intake → Validated Deal JSON → EVI")
 
     if not OPENAI_API_KEY:
-        st.error("Missing OPENAI_API_KEY. Add it in Streamlit Cloud Secrets or .streamlit/secrets.toml locally.")
+        st.error("Missing OPENAI_API_KEY. Add it in Streamlit Secrets.")
         st.stop()
-
-    if "intake_messages" not in st.session_state:
-        st.session_state.intake_messages = []
-    if "deal_json" not in st.session_state:
-        st.session_state.deal_json = None
-    if "last_question" not in st.session_state:
-        st.session_state.last_question = "Let’s start. What’s the company’s industry, approximate annual revenue, and EBITDA margin (or ‘unknown’)?"
 
     # Display chat history
     for m in st.session_state.intake_messages:
         with st.chat_message(m["role"]):
             st.write(m["content"])
 
-    # If we haven't started, show initial prompt
     if len(st.session_state.intake_messages) == 0:
         with st.chat_message("assistant"):
             st.write(st.session_state.last_question)
@@ -54,7 +86,6 @@ with tab1:
         with st.chat_message("user"):
             st.write(user_input)
 
-        # Call LLM intake agent
         with st.chat_message("assistant"):
             with st.spinner("Thinking…"):
                 out = ask_intake_agent(
@@ -72,9 +103,9 @@ with tab1:
                 st.success("✅ Deal JSON created and validated.")
                 st.session_state.deal_json = out["deal"]
 
-                # Score it
                 deal = Deal.model_validate(st.session_state.deal_json)
-                config = EVEConfig()
+                # Now uses the global weights from sidebar
+                config = EVEConfig(weights=st.session_state.weights)
                 result = compute_eve(deal, config=config, run_sensitivity=True)
 
                 st.markdown(
@@ -84,7 +115,7 @@ with tab1:
                     f"- **Weighted confidence:** {result['confidence_weighted']:.2f}"
                 )
 
-                if result["warnings"]:
+                if result.get("warnings"):
                     st.warning("\n".join(result["warnings"]))
 
                 colA, colB = st.columns(2)
@@ -102,18 +133,14 @@ with tab1:
                 st.code(json.dumps(st.session_state.deal_json, indent=2), language="json")
 
     st.divider()
-    colx, coly = st.columns([1, 1])
-    with colx:
-        if st.button("Reset intake chat"):
-            st.session_state.intake_messages = []
-            st.session_state.deal_json = None
-            st.session_state.last_question = "Let’s start. What’s the company’s industry, approximate annual revenue, and EBITDA margin (or ‘unknown’)?"
-            st.rerun()
-    with coly:
-        st.caption("Tip: Keep answers short. If you don’t know a number, say 'unknown' and the agent will use conservative assumptions.")
+    if st.button("Reset intake chat"):
+        st.session_state.intake_messages = []
+        st.session_state.deal_json = None
+        st.session_state.last_question = "Let’s start. What’s the company’s industry, approximate annual revenue, and EBITDA margin (or ‘unknown’)?"
+        st.rerun()
 
 # -------------------------
-# TAB 2: JSON Scorer (your existing mode)
+# TAB 2: JSON Scorer
 # -------------------------
 with tab2:
     st.subheader("Paste Deal JSON → Compute EVI")
@@ -136,33 +163,26 @@ with tab2:
         "assumptions_used": []
     }
 
-    txt = st.text_area("Deal JSON", value=json.dumps(default_json, indent=2), height=380)
+    txt = st.text_area("Deal JSON Input", value=json.dumps(default_json, indent=2), height=380)
 
-    st.subheader("Scoring Parameters")
-    col1, col2 = st.columns([1, 1])
-    with col1:
+    st.subheader("Logistic Parameters")
+    cola, colb = st.columns(2)
+    with cola:
         logistic_a = st.number_input("Logistic steepness (a)", value=6.0, step=0.5)
+    with colb:
         logistic_b = st.number_input("Logistic midpoint (b)", value=0.10, step=0.05)
-    with col2:
-        st.write("Weights (must sum to 1.00)")
-        w1 = st.slider("V1 Capital Productivity", 0.0, 1.0, 0.25, 0.01)
-        w2 = st.slider("V2 Risk Compression", 0.0, 1.0, 0.20, 0.01)
-        w3 = st.slider("V3 Strategic Velocity", 0.0, 1.0, 0.20, 0.01)
-        w4 = st.slider("V4 Optionality", 0.0, 1.0, 0.20, 0.01)
-        w5 = st.slider("V5 Resilience", 0.0, 1.0, 0.15, 0.01)
 
     if st.button("Compute EVI (JSON)"):
         try:
             data = json.loads(txt)
             deal = Deal.model_validate(data)
 
-            weights = {"v1": w1, "v2": w2, "v3": w3, "v4": w4, "v5": w5}
-            s = sum(weights.values())
-            if abs(s - 1.0) > 1e-6:
-                st.error(f"Weights must sum to 1.0. Current sum = {s:.3f}")
-                st.stop()
-
-            config = EVEConfig(weights=weights, logistic_a=logistic_a, logistic_b=logistic_b)
+            # Use normalized weights from session state
+            config = EVEConfig(
+                weights=st.session_state.weights, 
+                logistic_a=logistic_a, 
+                logistic_b=logistic_b
+            )
             result = compute_eve(deal, config=config, run_sensitivity=True)
 
             st.success(
@@ -171,10 +191,10 @@ with tab2:
                 f"weighted confidence = {result['confidence_weighted']:.2f}"
             )
 
-            if result["warnings"]:
+            if result.get("warnings"):
                 st.warning("\n".join(result["warnings"]))
 
-            st.subheader("Outputs")
+            st.subheader("Full Result Payload")
             st.json(result)
 
         except Exception as e:
