@@ -8,7 +8,6 @@ from eve_models import Deal
 
 @dataclass
 class EVEConfig:
-    # Changed from weights: Dict | None to Optional for better compatibility
     weights: Optional[Dict[str, float]] = None
     logistic_a: float = 6.0
     logistic_b: float = 0.10
@@ -19,7 +18,6 @@ class EVEConfig:
         
         s = sum(self.weights.values())
         if abs(s - 1.0) > 1e-6:
-            # Auto-normalize to prevent math crashes
             self.weights = {k: v / s for k, v in self.weights.items()}
 
 def clamp(x: float, lo: float, hi: float) -> float:
@@ -28,7 +26,6 @@ def clamp(x: float, lo: float, hi: float) -> float:
 def logistic_score(R: float, a: float, b: float) -> float:
     """Maps a Benefit/Cost ratio to a 0-100 score using an S-Curve."""
     try:
-        # Prevents math overflow if R is extremely high
         exponent = -a * (R - b)
         if exponent > 700: return 0.0
         if exponent < -700: return 100.0
@@ -36,17 +33,11 @@ def logistic_score(R: float, a: float, b: float) -> float:
     except OverflowError:
         return 100.0 if R > b else 0.0
 
-
-
-[Image of a logistic function curve]
-
-
 def discount_factors(T: int, r: float) -> List[float]:
     return [1.0 / ((1.0 + r) ** t) for t in range(1, T + 1)]
 
 def compute_pv_cost(deal: Deal, d: List[float]) -> float:
     pv = float(deal.investment.capex_upfront)
-    # Match the length of discount factors to the provided opex list
     limit = min(len(d), len(deal.investment.opex_annual))
     for t in range(limit):
         pv += d[t] * float(deal.investment.opex_annual[t])
@@ -66,7 +57,7 @@ def compute_v2(deal: Deal, d: List[float]) -> float:
 
 def compute_v3(deal: Deal, d: List[float]) -> float:
     inits = deal.v3_initiatives or []
-    # Strategic velocity is usually modeled as a Year 1 PV impact
+    if not d: return 0.0
     return sum(d[0] * (m.prob * m.months_accel * m.monthly_profit) for m in inits)
 
 def compute_v4(deal: Deal) -> float:
@@ -104,7 +95,7 @@ def compute_eve(deal: Deal, config: Optional[EVEConfig] = None, run_sensitivity:
 
     pv_cost = compute_pv_cost(deal, d)
     if pv_cost <= 0:
-        raise ValueError("PV cost must be greater than 0. Check your CapEx/OpEx inputs.")
+        raise ValueError("PV cost must be greater than 0.")
 
     benefits = {
         "v1": compute_v1(deal, d),
@@ -120,7 +111,6 @@ def compute_eve(deal: Deal, config: Optional[EVEConfig] = None, run_sensitivity:
     w = config.weights
     evi = sum(w[k] * scores[k] for k in ["v1", "v2", "v3", "v4", "v5"])
 
-    # Confidence Adjustment
     c = {
         "v1": clamp(deal.confidence.v1, 0.0, 1.0),
         "v2": clamp(deal.confidence.v2, 0.0, 1.0),
@@ -175,6 +165,5 @@ def run_simple_sensitivity(deal: Deal, config: EVEConfig, base_evi: float) -> Li
             out.append({"factor": key, "label": label, "delta_evi": float(evi2 - base_evi)})
         except:
             continue
-
     out.sort(key=lambda x: abs(x["delta_evi"]), reverse=True)
     return out
