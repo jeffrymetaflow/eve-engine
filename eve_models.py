@@ -1,6 +1,5 @@
 from __future__ import annotations
-
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, Annotated
 from pydantic import BaseModel, Field, conint, confloat, model_validator
 
 SourceType = Literal["provided", "assumed", "estimated"]
@@ -11,18 +10,20 @@ class Note(BaseModel):
 
 class Company(BaseModel):
     industry: str
-    revenue: Optional[float] = None
-    ebitda_margin: Optional[float] = None
+    # Changed to default to 0.0 or handle None more gracefully in scoring
+    revenue: Optional[float] = Field(default=None, ge=0.0)
+    ebitda_margin: Optional[float] = Field(default=None, ge=-1.0, le=1.0)
 
 class Meta(BaseModel):
     company: Company
-    horizon_years: conint(ge=1, le=15) = 5
-    discount_rate: confloat(ge=0.0, le=0.5) = 0.10
+    horizon_years: Annotated[int, Field(ge=1, le=15)] = 5
+    discount_rate: Annotated[float, Field(ge=0.0, le=0.5)] = 0.10
     currency: str = "USD"
 
 class Investment(BaseModel):
-    capex_upfront: confloat(ge=0.0) = 0.0
-    opex_annual: List[confloat(ge=0.0)]
+    capex_upfront: float = Field(default=0.0, ge=0.0)
+    # Default factory to avoid validation errors before the LLM finishes
+    opex_annual: List[float] = Field(default_factory=list)
 
 class V1CapitalProductivity(BaseModel):
     fcf_benefit_annual: Optional[List[float]] = None
@@ -30,43 +31,43 @@ class V1CapitalProductivity(BaseModel):
 
 class RiskEvent(BaseModel):
     name: str
-    p0: confloat(ge=0.0, le=1.0)
-    p1: confloat(ge=0.0, le=1.0)
-    L0: confloat(ge=0.0)
-    L1: confloat(ge=0.0)
+    p0: float = Field(ge=0.0, le=1.0)
+    p1: float = Field(ge=0.0, le=1.0)
+    L0: float = Field(ge=0.0)
+    L1: float = Field(ge=0.0)
 
 class Initiative(BaseModel):
     name: str
-    months_accel: confloat(ge=0.0)
+    months_accel: float = Field(ge=0.0)
     monthly_profit: float
-    prob: confloat(ge=0.0, le=1.0)
+    prob: float = Field(ge=0.0, le=1.0)
 
 class OptionOpportunity(BaseModel):
     name: str
-    prob: confloat(ge=0.0, le=1.0)
+    prob: float = Field(ge=0.0, le=1.0)
     npv_if_pursued: float
-    feasibility_lift: confloat(ge=0.0, le=1.0)
-    exercise_cost_reduction_pv: confloat(ge=0.0) = 0.0
+    feasibility_lift: float = Field(ge=0.0, le=1.0)
+    exercise_cost_reduction_pv: float = Field(default=0.0, ge=0.0)
 
 class V4OQI(BaseModel):
-    flexibility: confloat(ge=0.0, le=5.0) = 0.0
-    portability: confloat(ge=0.0, le=5.0) = 0.0
-    data_liquidity: confloat(ge=0.0, le=5.0) = 0.0
-    scalability: confloat(ge=0.0, le=5.0) = 0.0
+    flexibility: float = Field(default=0.0, ge=0.0, le=5.0)
+    portability: float = Field(default=0.0, ge=0.0, le=5.0)
+    data_liquidity: float = Field(default=0.0, ge=0.0, le=5.0)
+    scalability: float = Field(default=0.0, ge=0.0, le=5.0)
 
 class ResilienceScenario(BaseModel):
     name: str
-    p: confloat(ge=0.0, le=1.0)
-    mttr0_hours: confloat(ge=0.0)
-    mttr1_hours: confloat(ge=0.0)
-    cost_per_hour: confloat(ge=0.0)
+    p: float = Field(ge=0.0, le=1.0)
+    mttr0_hours: float = Field(ge=0.0)
+    mttr1_hours: float = Field(ge=0.0)
+    cost_per_hour: float = Field(ge=0.0)
 
 class Confidence(BaseModel):
-    v1: confloat(ge=0.0, le=1.0) = 0.3
-    v2: confloat(ge=0.0, le=1.0) = 0.3
-    v3: confloat(ge=0.0, le=1.0) = 0.3
-    v4: confloat(ge=0.0, le=1.0) = 0.3
-    v5: confloat(ge=0.0, le=1.0) = 0.3
+    v1: float = Field(default=0.3, ge=0.0, le=1.0)
+    v2: float = Field(default=0.3, ge=0.0, le=1.0)
+    v3: float = Field(default=0.3, ge=0.0, le=1.0)
+    v4: float = Field(default=0.3, ge=0.0, le=1.0)
+    v5: float = Field(default=0.3, ge=0.0, le=1.0)
 
 class Deal(BaseModel):
     meta: Meta
@@ -85,9 +86,15 @@ class Deal(BaseModel):
     @model_validator(mode="after")
     def validate_lengths(self) -> "Deal":
         T = self.meta.horizon_years
+        
+        # Check OPEX length
         if len(self.investment.opex_annual) != T:
-            raise ValueError(f"investment.opex_annual must have length {T} (horizon_years)")
+            # Instead of failing, we could pad with 0s, but raising Error is safer for financial models
+            raise ValueError(f"investment.opex_annual must have length {T} to match horizon_years.")
+        
+        # Check V1 Benefit length
         if self.v1_capital_productivity and self.v1_capital_productivity.fcf_benefit_annual is not None:
             if len(self.v1_capital_productivity.fcf_benefit_annual) != T:
-                raise ValueError(f"v1_capital_productivity.fcf_benefit_annual must have length {T}")
+                raise ValueError(f"v1_capital_productivity.fcf_benefit_annual must have length {T}.")
+        
         return self
