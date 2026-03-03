@@ -10,7 +10,7 @@ st.title("Enterprise Value Engineering™ (EVE) — Scoring Engine")
 
 # --- Secrets / API Key ---
 OPENAI_API_KEY = (st.secrets.get("OPENAI_API_KEY", "") or "").strip()
-OPENAI_MODEL = (st.secrets.get("OPENAI_MODEL", "gpt-4.1-mini") or "").strip()
+OPENAI_MODEL = (st.secrets.get("OPENAI_MODEL", "gpt-4.0-mini") or "").strip()
 
 with st.sidebar:
     st.markdown("### LLM Status")
