@@ -1,16 +1,17 @@
 from __future__ import annotations
 from typing import List, Optional, Literal, Annotated
-from pydantic import BaseModel, Field, conint, confloat, model_validator
+from pydantic import BaseModel, Field, model_validator
 
+# --- Types ---
 SourceType = Literal["provided", "assumed", "estimated"]
 
+# --- Components ---
 class Note(BaseModel):
     text: str
     source: SourceType = "provided"
 
 class Company(BaseModel):
     industry: str
-    # Changed to default to 0.0 or handle None more gracefully in scoring
     revenue: Optional[float] = Field(default=None, ge=0.0)
     ebitda_margin: Optional[float] = Field(default=None, ge=-1.0, le=1.0)
 
@@ -22,7 +23,6 @@ class Meta(BaseModel):
 
 class Investment(BaseModel):
     capex_upfront: float = Field(default=0.0, ge=0.0)
-    # Default factory to avoid validation errors before the LLM finishes
     opex_annual: List[float] = Field(default_factory=list)
 
 class V1CapitalProductivity(BaseModel):
@@ -69,6 +69,7 @@ class Confidence(BaseModel):
     v4: float = Field(default=0.3, ge=0.0, le=1.0)
     v5: float = Field(default=0.3, ge=0.0, le=1.0)
 
+# --- Main Deal Model ---
 class Deal(BaseModel):
     meta: Meta
     investment: Investment
@@ -83,32 +84,31 @@ class Deal(BaseModel):
     confidence: Confidence = Field(default_factory=Confidence)
     assumptions_used: List[str] = Field(default_factory=list)
 
-        @model_validator(mode="after")
-            def validate_and_fix_lengths(self) -> "Deal":
-                T = self.meta.horizon_years
-                
-                # 1. Fix Investment OpEx
-                current_opex = self.investment.opex_annual
-                if len(current_opex) == 0:
-                    # If empty, provide a list of zeros
-                    self.investment.opex_annual = [0.0] * T
-                elif len(current_opex) < T:
-                    # If they provided [5000000], repeat it for all years
-                    last_val = current_opex[-1]
-                    padding = [last_val] * (T - len(current_opex))
-                    self.investment.opex_annual = current_opex + padding
-                elif len(current_opex) > T:
-                    # If the LLM was too chatty, trim it
-                    self.investment.opex_annual = current_opex[:T]
+    @model_validator(mode="after")
+    def validate_and_fix_lengths(self) -> "Deal":
+        T = self.meta.horizon_years
         
-                # 2. Fix V1 Capital Productivity (if it exists)
-                if self.v1_capital_productivity and self.v1_capital_productivity.fcf_benefit_annual is not None:
-                    current_fcf = self.v1_capital_productivity.fcf_benefit_annual
-                    if len(current_fcf) < T:
-                        last_val = current_fcf[-1] if current_fcf else 0.0
-                        padding = [last_val] * (T - len(current_fcf))
-                        self.v1_capital_productivity.fcf_benefit_annual = current_fcf + padding
-                    elif len(current_fcf) > T:
-                        self.v1_capital_productivity.fcf_benefit_annual = current_fcf[:T]
-                
-                return self
+        # 1. Fix Investment OpEx
+        current_opex = self.investment.opex_annual
+        if not current_opex:
+            self.investment.opex_annual = [0.0] * T
+        elif len(current_opex) < T:
+            # Pad with the last value provided
+            last_val = current_opex[-1]
+            padding = [last_val] * (T - len(current_opex))
+            self.investment.opex_annual = current_opex + padding
+        elif len(current_opex) > T:
+            self.investment.opex_annual = current_opex[:T]
+
+        # 2. Fix V1 Capital Productivity Benefit
+        v1 = self.v1_capital_productivity
+        if v1 and v1.fcf_benefit_annual is not None:
+            current_fcf = v1.fcf_benefit_annual
+            if len(current_fcf) < T:
+                last_val = current_fcf[-1] if current_fcf else 0.0
+                padding = [last_val] * (T - len(current_fcf))
+                v1.fcf_benefit_annual = current_fcf + padding
+            elif len(current_fcf) > T:
+                v1.fcf_benefit_annual = current_fcf[:T]
+        
+        return self
