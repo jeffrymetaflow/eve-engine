@@ -91,7 +91,7 @@ with tab1:
                 out = ask_intake_agent(
                     api_key=OPENAI_API_KEY,
                     messages=st.session_state.intake_messages,
-                    model=OPENAI_MODEL,
+                    model=gpt-3.5-turbo-0125,
                 )
 
             if out["type"] == "question":
