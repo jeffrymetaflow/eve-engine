@@ -32,7 +32,7 @@ def _extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
 def ask_intake_agent(
     api_key: str,
     messages: List[Dict[str, str]],
-    model: str = "gpt-3.5-turbo-0125", # Use a valid model name
+    model: str = "gpt-3.5-turbo", # Use a valid model name
 ) -> Dict[str, Any]:
     client = _openai_client(api_key)
 
