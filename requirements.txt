@@ -4,3 +4,4 @@ streamlit>=1.32.0
 openai>=1.40.0
 # Optional but recommended for local testing with a .env file
 python-dotenv>=1.0.0
+json-repair
