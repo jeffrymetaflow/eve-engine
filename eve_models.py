@@ -83,32 +83,32 @@ class Deal(BaseModel):
     confidence: Confidence = Field(default_factory=Confidence)
     assumptions_used: List[str] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-        def validate_and_fix_lengths(self) -> "Deal":
-            T = self.meta.horizon_years
-            
-            # 1. Fix Investment OpEx
-            current_opex = self.investment.opex_annual
-            if len(current_opex) == 0:
-                # If empty, provide a list of zeros
-                self.investment.opex_annual = [0.0] * T
-            elif len(current_opex) < T:
-                # If they provided [5000000], repeat it for all years
-                last_val = current_opex[-1]
-                padding = [last_val] * (T - len(current_opex))
-                self.investment.opex_annual = current_opex + padding
-            elif len(current_opex) > T:
-                # If the LLM was too chatty, trim it
-                self.investment.opex_annual = current_opex[:T]
-    
-            # 2. Fix V1 Capital Productivity (if it exists)
-            if self.v1_capital_productivity and self.v1_capital_productivity.fcf_benefit_annual is not None:
-                current_fcf = self.v1_capital_productivity.fcf_benefit_annual
-                if len(current_fcf) < T:
-                    last_val = current_fcf[-1] if current_fcf else 0.0
-                    padding = [last_val] * (T - len(current_fcf))
-                    self.v1_capital_productivity.fcf_benefit_annual = current_fcf + padding
-                elif len(current_fcf) > T:
-                    self.v1_capital_productivity.fcf_benefit_annual = current_fcf[:T]
-            
-            return self
+@model_validator(mode="after")
+    def validate_and_fix_lengths(self) -> "Deal":
+        T = self.meta.horizon_years
+        
+        # 1. Fix Investment OpEx
+        current_opex = self.investment.opex_annual
+        if len(current_opex) == 0:
+            # If empty, provide a list of zeros
+            self.investment.opex_annual = [0.0] * T
+        elif len(current_opex) < T:
+            # If they provided [5000000], repeat it for all years
+            last_val = current_opex[-1]
+            padding = [last_val] * (T - len(current_opex))
+            self.investment.opex_annual = current_opex + padding
+        elif len(current_opex) > T:
+            # If the LLM was too chatty, trim it
+            self.investment.opex_annual = current_opex[:T]
+
+        # 2. Fix V1 Capital Productivity (if it exists)
+        if self.v1_capital_productivity and self.v1_capital_productivity.fcf_benefit_annual is not None:
+            current_fcf = self.v1_capital_productivity.fcf_benefit_annual
+            if len(current_fcf) < T:
+                last_val = current_fcf[-1] if current_fcf else 0.0
+                padding = [last_val] * (T - len(current_fcf))
+                self.v1_capital_productivity.fcf_benefit_annual = current_fcf + padding
+            elif len(current_fcf) > T:
+                self.v1_capital_productivity.fcf_benefit_annual = current_fcf[:T]
+        
+        return self
